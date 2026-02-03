@@ -352,30 +352,10 @@
 
         <button class="btn primary" style="width:100%" type="button" id="showBtn">Show Price Range</button>
 
-        <div class="quoteBox" id="quoteBox" style="display:none">
-          <div class="quoteAmt" id="result"></div>
-          <p class="fine" id="noteText">Estimates are market-based ranges from local providers. Final pricing depends on scope, access, materials, and site conditions.</p>
-          <p class="fine" id="typical" style="margin-top:6px"></p>
-
-          <div class="row2" style="margin-top:12px">
-            <div>
-              <label for="leadName">Your name</label>
-              <input id="leadName" autocomplete="name" placeholder="John" />
-            </div>
-            <div>
-              <label for="leadPhone">Phone</label>
-              <input id="leadPhone" inputmode="tel" autocomplete="tel" placeholder="(954) 555-1234" />
-            </div>
-          </div>
-          <div style="margin-top:10px">
-            <label for="leadEmail">Email (required)</label>
-            <input id="leadEmail" type="email" autocomplete="email" placeholder="you@email.com" />
-          </div>
-
-          <div style="margin-top:10px">
+        <div class="quoteBox" id="quoteBox" style="display:none">$1<div style="margin-top:10px">
             <button class="btn ghost" type="button" id="matchBtn">Get Matched</button>
           </div>
-          <p class="fine" style="margin-top:8px">If your email app does not open, we will show the admin email so you can copy/paste it.</p>
+          <p class="fine" id="matchStatus" style="margin-top:8px"></p>
         </div>
       </form>
     </section>
@@ -429,6 +409,38 @@
   </footer>
 
 </div>
+
+<!-- Netlify Forms (hidden lead form; no email/password popups) -->
+<form name="lead" id="netlifyLeadForm" method="POST" data-netlify="true" netlify-honeypot="bot-field" class="hidden">
+  <input type="hidden" name="form-name" value="lead" />
+  <p class="hidden"><label>Don’t fill this out: <input name="bot-field" /></label></p>
+  <input type="text" name="leadName" />
+  <input type="text" name="leadPhone" />
+  <input type="email" name="leadEmail" />
+  <input type="text" name="county" />
+  <input type="text" name="zip" />
+  <input type="text" name="category" />
+  <input type="text" name="serviceType" />
+  <input type="text" name="stories" />
+  <input type="text" name="prep" />
+  <input type="text" name="size" />
+  <input type="text" name="paintingScope" />
+  <input type="text" name="flooringMaterial" />
+  <input type="text" name="petOption" />
+  <input type="text" name="petCount" />
+  <input type="text" name="needWhen" />
+  <input type="text" name="serviceLevel" />
+  <input type="text" name="estimateLow" />
+  <input type="text" name="estimateHigh" />
+  <textarea name="notes"></textarea>
+</form>
+
+<noscript>
+  <div class="card" style="margin-top:18px;padding:18px">
+    <h3>Get Matched (No JavaScript)</h3>
+    <p class="muted">Enable JavaScript for the instant matching form to work.</p>
+  </div>
+</noscript>
 
 <script>
   // Default email (editable via footer link)
@@ -737,7 +749,32 @@
       "&body=" + body;
   }
 
+  function encodeForm(data){
+    return Object.keys(data)
+      .map(function(k){ return encodeURIComponent(k) + "=" + encodeURIComponent(String(data[k] ?? "")); })
+      .join("&");
+  }
+
+  function setMatchStatus(msg, isOk){
+    const el = document.getElementById("matchStatus");
+    if(!el) return;
+    el.textContent = msg || "";
+    el.style.color = isOk ? "#bbf7d0" : "#fecaca";
+  }
+
+  async function submitLeadToNetlify(payload){
+    // Netlify Forms: POST urlencoded to the site root
+    const body = encodeForm(payload);
+    const res = await fetch("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
+    });
+    return res.ok;
+  }
+
   function openMailto(subject, bodyText){
+    // Kept for Contact button only (some users prefer email)
     const subjectEnc = encodeURIComponent(subject);
     const bodyEnc = encodeURIComponent(bodyText);
     const href = "mailto:" + ADMIN_EMAIL + "?subject=" + subjectEnc + "&body=" + bodyEnc;
@@ -754,7 +791,9 @@
       try{
         if(navigator.clipboard && navigator.clipboard.writeText){
           navigator.clipboard.writeText(ADMIN_EMAIL).then(function(){
-            alert(msg + "\n\n(Email copied to clipboard)");
+            alert(msg + "
+
+(Email copied to clipboard)");
           }).catch(function(){
             alert(msg);
           });
@@ -841,7 +880,9 @@
     document.getElementById("quoteBox").style.display = "block";
   });
 
-  document.getElementById("matchBtn").addEventListener("click", function(){
+  document.getElementById("matchBtn").addEventListener("click", async function(){
+    setMatchStatus("", true);
+
     const r = calculate();
     if(!r) return;
 
@@ -870,46 +911,43 @@
       return;
     }
 
-    const subject = "NEW LEAD - " + String(r.cat).toUpperCase() + " - " + r.county + " - " + r.zip;
+    // Build payload for Netlify Forms
+    const payload = {
+      "form-name": "lead",
+      leadName: name,
+      leadPhone: phone,
+      leadEmail: email,
+      county: r.county,
+      zip: r.zip,
+      category: r.cat,
+      serviceType: r.subtype || "",
+      stories: r.stories || "",
+      prep: r.prep || "",
+      size: (r.cat === "pet") ? "" : String(document.getElementById("size").value || ""),
+      paintingScope: r.paintingScope || "",
+      flooringMaterial: r.flooringMaterial || "",
+      petOption: r.petOption || "",
+      petCount: r.petCount || "",
+      needWhen: r.needWhen || "",
+      serviceLevel: r.serviceLevel || "",
+      estimateLow: String(Math.round(r.low)),
+      estimateHigh: String(Math.round(r.high)),
+      notes: r.notes || ""
+    };
 
-    let bodyText =
-      "Lead details\n" +
-      "Name: " + name + "\n" +
-      "Phone: " + phone + "\n" +
-      "Email: " + email + "\n\n" +
-      "County: " + r.county + "\n" +
-      "ZIP: " + r.zip + "\n" +
-      "Category: " + r.cat + "\n" +
-      "Service type: " + (r.subtype || "") + "\n" +
-      "Stories / access: " + (r.stories || "") + "\n" +
-      "Prep / repairs: " + (r.prep || "") + "\n" +
-      (r.cat === "pet" ? "" : ("Area / size: " + document.getElementById("size").value + "\n"));
+    // UX: show instant feedback
+    setMatchStatus("Sending…", true);
 
-    if(r.paintingScope){
-      bodyText += "Painting scope: " + r.paintingScope + "\n";
+    try{
+      const ok = await submitLeadToNetlify(payload);
+      if(ok){
+        setMatchStatus("✅ Submitted! A provider will contact you soon.", true);
+      } else {
+        setMatchStatus("⚠️ Submission failed. Please try again or use Contact → Email Us.", false);
+      }
+    } catch(err){
+      setMatchStatus("⚠️ Submission blocked by browser/network. Please try again or use Contact → Email Us.", false);
     }
-    if(r.flooringMaterial){
-      bodyText += "Flooring material: " + r.flooringMaterial + "\n";
-    }
-    if(r.petOption){
-      const opts = PET_OPTIONS[r.subtype] || [];
-      const found = opts.find(function(o){ return o.value === r.petOption; });
-      bodyText += "Pet option: " + (found ? found.label : r.petOption) + "\n";
-    }
-    if(r.petCount){
-      bodyText += "Number of pets: " + r.petCount + "\n";
-    }
-
-    bodyText +=
-      "When needed: " + (r.needWhen || "") + "\n" +
-      "Service level: " + (r.serviceLevel || "") + "\n" +
-      "Estimated Range: " + money(r.low) + " - " + money(r.high) + "\n";
-
-    if(r.notes){
-      bodyText += "\nNotes: " + r.notes + "\n";
-    }
-
-    openMailto(subject, bodyText);
   });
 
   // Download current page as HTML file
@@ -945,6 +983,7 @@
   (function(){
     console.assert(typeof calculate === "function", "[tests] calculate() should exist");
     console.assert(typeof providerApply === "function", "[tests] providerApply() should exist");
+    console.assert(typeof submitLeadToNetlify === "function", "[tests] submitLeadToNetlify() should exist");
     console.assert(validateZip("33063") === true, "[tests] validateZip should accept 5 digits");
     console.assert(validateZip("3306") === false, "[tests] validateZip should reject invalid");
     console.assert(document.querySelectorAll(".tab").length === 5, "[tests] should have 5 tabs");
