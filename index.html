@@ -210,8 +210,8 @@
       <p class="muted">Instant price ranges for home services in Broward and Palm Beach County. No calls. No pressure.</p>
 
       <div class="ctaRow">
-        <button class="btn primary" type="button" onclick="document.querySelector('#quote').scrollIntoView({behavior:'smooth'})">Get Instant Quote</button>
-        <button class="btn ghost" type="button" onclick="document.querySelector('#providers').scrollIntoView({behavior:'smooth'})">Become a Provider</button>
+        <button class="btn primary" type="button" id="scrollQuoteBtn">Get Instant Quote</button>
+        <button class="btn ghost" type="button" id="scrollProviderBtn">Become a Provider</button>
       </div>
 
       <div class="ctaRow" style="margin-bottom:12px">
@@ -410,7 +410,7 @@
     <label for="pemail" style="margin-top:10px">Email</label>
     <input id="pemail" type="email" autocomplete="email" />
 
-    <button class="btn primary" style="margin-top:14px" type="button" onclick="providerApply()">Send Application</button>
+    <button class="btn primary" style="margin-top:14px" type="button" id="providerApplyBtn">Send Application</button>
 
     <p class="fine" style="margin-top:10px">This MVP uses email to collect provider signups. Later, we can add a real form and database.</p>
   </section>
@@ -433,7 +433,7 @@
 <!-- Netlify Forms: hidden form definition so Netlify detects it -->
 <form name="lead" id="netlifyLeadForm" method="POST" data-netlify="true" netlify-honeypot="bot-field" class="hidden">
   <input type="hidden" name="form-name" value="lead" />
-  <p class="hidden"><label>Don't fill this out: <input name="bot-field" /></label></p>
+  <p class="hidden"><label>Do not fill this out: <input name="bot-field" /></label></p>
   <input type="text" name="leadName" />
   <input type="text" name="leadPhone" />
   <input type="email" name="leadEmail" />
@@ -627,7 +627,6 @@
       sel.appendChild(opt);
     }
 
-    // Ensure we always have something selected
     if(sel.options.length > 0) sel.selectedIndex = 0;
 
     refreshConditionalFields();
@@ -655,7 +654,6 @@
     var rawSize = String(document.getElementById("size").value || "").trim();
     var size = Number(rawSize);
 
-    // Pet care: no sqft/units required.
     if(isPetCategory()){
       size = 1;
     } else if(isDisposalSubtype()){
@@ -695,7 +693,6 @@
       low = perLow * extraPetMult;
       high = perHigh * extraPetMult;
     } else {
-      // Simple sqft base for MVP
       low = size * 1.5;
       high = size * 3.5;
     }
@@ -766,29 +763,6 @@
     };
   }
 
-  function providerApply(){
-    var name = document.getElementById("pname").value.trim();
-    var company = document.getElementById("pcompany").value.trim();
-    var email = document.getElementById("pemail").value.trim();
-
-    if(!name || !email){
-      alert("Please enter at least your name and email.");
-      return;
-    }
-
-    var body = encodeURIComponent(
-      "Provider application\n" +
-      "Name: " + name + "\n" +
-      "Company: " + company + "\n" +
-      "Email: " + email + "\n"
-    );
-
-    window.location.href =
-      "mailto:" + ADMIN_EMAIL +
-      "?subject=" + encodeURIComponent("Provider Application") +
-      "&body=" + body;
-  }
-
   function encodeForm(data){
     var parts = [];
     for(var k in data){
@@ -807,56 +781,15 @@
     el.style.color = isOk ? "#bbf7d0" : "#fecaca";
   }
 
-  function submitLeadToNetlify(payload, onDone){
-    // Netlify Forms: POST urlencoded to the site root
-    var body = encodeForm(payload);
-
-    // Prefer fetch if available
-    if(typeof fetch === "function"){
-      fetch("/", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: body
-      }).then(function(res){
-        onDone(null, !!(res && res.ok));
-      }).catch(function(err){
-        onDone(err, false);
-      });
-      return;
-    }
-
-    // XHR fallback
-    try{
-      var xhr = new XMLHttpRequest();
-      xhr.open("POST", "/", true);
-      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-      xhr.onreadystatechange = function(){
-        if(xhr.readyState === 4){
-          var ok = (xhr.status >= 200 && xhr.status < 400);
-          onDone(null, ok);
-        }
-      };
-      xhr.send(body);
-    } catch(e){
-      onDone(e, false);
-    }
-  }
-
   function openMailto(subject, bodyText){
-    // Kept for Contact button only (some users prefer email)
     var subjectEnc = encodeURIComponent(subject);
     var bodyEnc = encodeURIComponent(bodyText);
     var href = "mailto:" + ADMIN_EMAIL + "?subject=" + subjectEnc + "&body=" + bodyEnc;
 
-    try{
-      window.location.href = href;
-    } catch(e) {
-      // ignore
-    }
+    try{ window.location.href = href; } catch(e) {}
 
-    // Fallback message (some in-app browsers block mailto)
     setTimeout(function(){
-      var msg = "If your email app didn't open, email us at: " + ADMIN_EMAIL;
+      var msg = "If your email app did not open, email us at: " + ADMIN_EMAIL;
       try{
         if(navigator.clipboard && navigator.clipboard.writeText){
           navigator.clipboard.writeText(ADMIN_EMAIL).then(function(){
@@ -871,6 +804,71 @@
         alert(msg);
       }
     }, 350);
+  }
+
+  function submitLeadToNetlify(payload, onDone){
+    // Netlify Forms works only when hosted on Netlify.
+    // If you open the file locally (file://) it will fail.
+    var isLocalFile = (window.location && window.location.protocol === "file:");
+    var body = encodeForm(payload);
+
+    if(isLocalFile){
+      onDone(new Error("local-file"), false);
+      return;
+    }
+
+    // IMPORTANT:
+    // For maximum compatibility with Netlify Forms, post to the site root.
+    // Posting to window.location.pathname can 404 on some routes.
+    var postUrl = "/";
+
+    if(typeof fetch === "function"){
+      fetch(postUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body
+      }).then(function(res){
+        // Some Netlify responses are redirects; treat 2xx/3xx as success.
+        var ok = !!res && (res.status >= 200 && res.status < 400);
+        onDone(null, ok, res && res.status);
+      }).catch(function(err){
+        onDone(err, false, 0);
+      });
+      return;
+    }
+
+    try{
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", postUrl, true);
+      xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+      xhr.onreadystatechange = function(){
+        if(xhr.readyState === 4){
+          var ok = (xhr.status >= 200 && xhr.status < 400);
+          onDone(null, ok, xhr.status);
+        }
+      };
+      xhr.send(body);
+    } catch(e){
+      onDone(e, false, 0);
+    }
+  }
+
+  function providerApply(){
+    var name = document.getElementById("pname").value.trim();
+    var company = document.getElementById("pcompany").value.trim();
+    var email = document.getElementById("pemail").value.trim();
+
+    if(!name || !email){
+      alert("Please enter at least your name and email.");
+      return;
+    }
+
+    var body = "Provider application\n" +
+      "Name: " + name + "\n" +
+      "Company: " + company + "\n" +
+      "Email: " + email + "\n";
+
+    openMailto("Provider Application", body);
   }
 
   function refreshMailLinks(){
@@ -901,7 +899,22 @@
     alert("Saved. Leads will be emailed to: " + ADMIN_EMAIL);
   }
 
-  // Wire up UI
+  // UI wiring
+  function scrollToId(id){
+    var el = document.querySelector(id);
+    if(el && el.scrollIntoView){
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
+  document.getElementById("scrollQuoteBtn").addEventListener("click", function(){
+    scrollToId("#quote");
+  });
+
+  document.getElementById("scrollProviderBtn").addEventListener("click", function(){
+    scrollToId("#providers");
+  });
+
   var tabs = document.querySelectorAll(".tab");
   for(var i=0;i<tabs.length;i++){
     (function(btn){
@@ -933,19 +946,14 @@
     var r = calculate();
     if(!r) return;
 
-    var rangeText = money(r.low) + " - " + money(r.high);
-    document.getElementById("result").innerText = rangeText;
+    document.getElementById("result").innerText = money(r.low) + " - " + money(r.high);
 
     var t = typicalBand(r.low, r.high);
-    document.getElementById("typical").innerText =
-      "Most similar jobs land around " + money(t.lo) + " - " + money(t.hi);
+    document.getElementById("typical").innerText = "Most similar jobs land around " + money(t.lo) + " - " + money(t.hi);
 
-    var ln = document.getElementById("leadName");
-    var lp = document.getElementById("leadPhone");
-    var le = document.getElementById("leadEmail");
-    if(ln) ln.value = "";
-    if(lp) lp.value = "";
-    if(le) le.value = "";
+    document.getElementById("leadName").value = "";
+    document.getElementById("leadPhone").value = "";
+    document.getElementById("leadEmail").value = "";
 
     document.getElementById("quoteBox").style.display = "block";
   });
@@ -1006,18 +1014,59 @@
 
     setMatchStatus("Sending...", true);
 
-    submitLeadToNetlify(payload, function(err, ok){
+    submitLeadToNetlify(payload, function(err, ok, status){
       if(ok){
         setMatchStatus("Submitted! A provider will contact you soon.", true);
       } else {
-        setMatchStatus("Submission failed. Please try again or use Contact -> Email Us.", false);
-      }
-      if(err){
-        // keep console-only
-        try{ console.warn("Netlify lead submit error", err); }catch(e){}
+        var help = "Submission failed. ";
+        if(err && String(err.message || err).indexOf("local-file") !== -1){
+          help += "This works only on the live Netlify website (not when opened as a file).";
+        } else {
+          help += "If you are not hosting on Netlify, Netlify Forms will not work. Use Contact -> Email Us.";
+        }
+        setMatchStatus(help, false);
+
+        // Fallback: open email draft automatically so the lead is never lost
+        var fallbackBody = "Lead request (fallback)
+" +
+          "Name: " + name + "
+" +
+          "Phone: " + phone + "
+" +
+          "Email: " + email + "
+" +
+          "County: " + r.county + "
+" +
+          "ZIP: " + r.zip + "
+" +
+          "Category: " + r.cat + "
+" +
+          "Service: " + r.subtype + "
+" +
+          (r.flooringMaterial ? ("Flooring material: " + r.flooringMaterial + "
+") : "") +
+          (r.paintingScope ? ("Painting scope: " + r.paintingScope + "
+") : "") +
+          (r.petOption ? ("Pet option: " + r.petOption + "
+") : "") +
+          (r.petCount ? ("Pet count: " + r.petCount + "
+") : "") +
+          "Estimate: " + money(r.low) + " - " + money(r.high) + "
+" +
+          (r.notes ? ("Notes: " + r.notes + "
+") : "");
+
+        // Only auto-open if the user is on mobile or if status suggests non-Netlify hosting
+        // (keeps desktop UX calmer)
+        if(status === 0 || status >= 400){
+          openMailto("Lead Request (fallback)", fallbackBody);
+        }
       }
     });
   });
+
+  // Provider button
+  document.getElementById("providerApplyBtn").addEventListener("click", providerApply);
 
   // Download current page as HTML file
   var downloadBtn = document.getElementById("downloadBtn");
@@ -1046,7 +1095,6 @@
     setAdminEmail();
   });
 
-  // Start with Cleaning and populate Service dropdown
   setCategory("cleaning");
 
   // Tests (open DevTools console)
